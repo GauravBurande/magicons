@@ -177,7 +177,7 @@ export default function Home() {
 
     const gif = new GIF({
       workers: 4,
-      quality: 10,
+      quality: 5,
       width: img.clientWidth,
       height: img.clientHeight,
       workerScript: "/gifjs/gif.worker.js",
