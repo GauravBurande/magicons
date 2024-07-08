@@ -195,40 +195,32 @@ export default function Home() {
       return;
     }
 
-    // Create a clone of the image to animate
-    const clonedImg = img.cloneNode(true) as HTMLImageElement;
-    clonedImg.style.position = "absolute";
-    clonedImg.style.left = "-9999px";
-    document.body.appendChild(clonedImg);
-
     let animation: any;
     if ("timeline" in config) {
       animation = anime.timeline({
-        targets: clonedImg,
+        targets: img,
         loop: true,
         autoplay: true,
       });
       config.timeline.forEach((keyframe: any) => animation.add(keyframe));
     } else {
-      animation = anime({ targets: clonedImg, ...config, autoplay: true });
+      animation = anime({ targets: img, ...config, autoplay: true });
     }
 
     let frameCount = 0;
 
     function captureFrame() {
+      if (!img) {
+        console.error("Image reference is null");
+        return;
+      }
       const canvas = document.createElement("canvas");
-      canvas.width = clonedImg.clientWidth;
-      canvas.height = clonedImg.clientHeight;
+      canvas.width = img.clientWidth;
+      canvas.height = img.clientHeight;
       const ctx = canvas.getContext("2d");
 
       if (ctx) {
-        ctx.drawImage(
-          clonedImg,
-          0,
-          0,
-          clonedImg.clientWidth,
-          clonedImg.clientHeight
-        );
+        ctx.drawImage(img, 0, 0, img.clientWidth, img.clientHeight);
         gif.addFrame(ctx, { copy: true, delay: frameDelay });
       }
 
@@ -239,7 +231,7 @@ export default function Home() {
       } else {
         gif.render();
         // Clean up
-        document.body.removeChild(clonedImg);
+        document.body.removeChild(img);
         animation.pause();
       }
     }
