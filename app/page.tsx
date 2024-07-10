@@ -9,8 +9,19 @@ import { useEffect, useRef, useState } from "react";
 import GIF from "gif.js.optimized";
 
 type BaseAnimationConfig = {
-  loop?: boolean;
+  scale?: number | number[] | Array<{ value: number; duration?: number }>;
+  translateY?:
+    | number
+    | number[]
+    | any
+    | Array<{ value: number; duration?: number }>;
+  translateX?: number | number[] | Array<{ value: number; duration?: number }>;
+  rotateZ?: number | number[] | Array<{ value: number; duration?: number }>;
+  opacity?: number | number[] | Array<{ value: number; duration?: number }>;
+  timeline?: Array<{ [key: string]: any }>;
   easing?: string;
+  loop?: boolean;
+  direction?: string;
   duration?: number;
 };
 
@@ -127,7 +138,7 @@ export default function Home() {
       animations.forEach((anim) => anim.pause());
       anime.remove([".icon1", ".icon2", ".icon3", ".icon4", ".icon5"]);
     };
-  }, [iconImage, animeStyle]);
+  }, [iconImage]);
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files && event.target.files[0];
@@ -168,19 +179,89 @@ export default function Home() {
     }
   };
 
+  function parseAndApplyAnimationConfig(
+    ctx: CanvasRenderingContext2D,
+    config: AnimationConfig,
+    progress: number
+  ) {
+    const animations: any = [];
+
+    if (config.scale) {
+      animations.push({ type: "scale", values: config.scale });
+    }
+    if (config.translateY) {
+      animations.push({ type: "translateY", values: config.translateY });
+    }
+    if (config.translateX) {
+      animations.push({ type: "translateX", values: config.translateX });
+    }
+    if (config.rotateZ) {
+      animations.push({ type: "rotateZ", values: config.rotateZ });
+    }
+    if (config.opacity) {
+      animations.push({ type: "opacity", values: config.opacity });
+    }
+    if (config.timeline) {
+      config.timeline.forEach((tl) => {
+        animations.push({ type: "timeline", values: tl });
+      });
+    }
+
+    animations.forEach((anim: any) => {
+      const { type, values } = anim;
+      let value;
+      if (Array.isArray(values)) {
+        const startValue = values[0];
+        const endValue = values[1];
+        value = startValue + (endValue - startValue) * progress;
+      } else {
+        value = values;
+      }
+
+      switch (type) {
+        case "scale":
+          ctx.scale(value, value);
+          break;
+        case "translateY":
+          ctx.translate(0, value);
+          break;
+        case "translateX":
+          ctx.translate(value, 0);
+          break;
+        case "rotateZ":
+          ctx.rotate((value * Math.PI) / 180);
+          break;
+        case "opacity":
+          ctx.globalAlpha = value;
+          break;
+        default:
+          break;
+      }
+    });
+  }
+
   const handleExport = () => {
-    const img = iconRef.current;
-    if (!img) {
+    const imageElement = iconRef.current;
+    if (!imageElement) {
       console.error("Image reference is null");
       return;
     }
 
+    // Create a canvas element
+    const canvas = document.createElement("canvas");
+    canvas.width = imageElement.width;
+    canvas.height = imageElement.height;
+    document.body.appendChild(canvas);
+
+    console.log("Canvas dimensions:", canvas.width, canvas.height);
+
     const gif = new GIF({
       workers: 4,
       quality: 5,
-      width: img.clientWidth,
-      height: img.clientHeight,
+      width: canvas.width,
+      height: canvas.height,
       workerScript: "/gifjs/gif.worker.js",
+      background: "#fff",
     });
 
     const fps = 24;
@@ -188,65 +269,60 @@ export default function Home() {
     const totalFrames = fps * (duration / 1000);
     const frameDelay = 1000 / fps;
 
-    // Recreate the animation based on the selected style
     const config = animationConfigs[animeStyle];
     if (!config) {
       console.error("Unknown animation style");
       return;
     }
 
-    let animation: any;
-    if ("timeline" in config) {
-      animation = anime.timeline({
-        targets: img,
-        loop: true,
-        autoplay: true,
-      });
-      config.timeline.forEach((keyframe: any) => animation.add(keyframe));
-    } else {
-      animation = anime({ targets: img, ...config, autoplay: true });
+    const ctx = canvas.getContext("2d");
+    if (!ctx) {
+      console.error("Failed to get 2D context from canvas");
+      return;
     }
 
-    let frameCount = 0;
+    let currentFrame = 0;
 
-    function captureFrame() {
-      if (!img) {
-        console.error("Image reference is null");
-        return;
-      }
-      const canvas = document.createElement("canvas");
-      canvas.width = img.clientWidth;
-      canvas.height = img.clientHeight;
-      const ctx = canvas.getContext("2d");
+    // Function to draw the image on the canvas with transformations
+    const drawFrame = (progress: number) => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.save();
 
-      if (ctx) {
-        ctx.drawImage(img, 0, 0, img.clientWidth, img.clientHeight);
-        gif.addFrame(ctx, { copy: true, delay: frameDelay });
-      }
+      // Apply transformations based on the progress
+      parseAndApplyAnimationConfig(ctx, config, progress);
 
-      frameCount++;
+      ctx.drawImage(imageElement, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
 
-      if (frameCount < totalFrames) {
-        requestAnimationFrame(captureFrame);
+      // Add the frame to the GIF
+      gif.addFrame(ctx, { copy: true, delay: frameDelay });
+    };
+
+    const animate = () => {
+      if (currentFrame < totalFrames) {
+        const progress = currentFrame / totalFrames;
+        drawFrame(progress);
+        currentFrame++;
+        requestAnimationFrame(animate);
       } else {
+        console.log("Rendering GIF...");
         gif.render();
-        // Clean up
-        document.body.removeChild(img);
-        animation.pause();
+
+        // Trigger download
+        gif.on("finished", (blob: Blob) => {
+          console.log("GIF rendering finished.");
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "animated-icon.gif";
+          a.click();
+          URL.revokeObjectURL(url);
+        });
       }
-    }
+    };
 
-    // Start capturing frames
-    requestAnimationFrame(captureFrame);
-
-    gif.on("finished", (blob: Blob) => {
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = "animated-icon.gif";
-      a.click();
-      URL.revokeObjectURL(url);
-    });
+    console.log("Starting animation...");
+    animate();
   };
 
   return (
@@ -254,7 +330,7 @@ export default function Home() {
       <Header />
 
       <h1 className="text-3xl md:text-6xl font-bold">
-        Animate your icons such that they grab viewers attention
+        Animate icons for your producthunt launch
       </h1>
 
       <div className="md:text-lg">
